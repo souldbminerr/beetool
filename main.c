@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
             {"json", 1, NULL, 37},
             {"saveini1json", 0, NULL, 38},
             {"uncompressed", 1, NULL, 39},
-            {"disablekeywarns", 0, NULL, 40},
+            {"enablekeywarns", 0, NULL, 40},
             {"listfiles", 0, NULL, 41},
             {"xcontenttype", 1, NULL, 42},
             {"appendsectypes", 0, NULL, 43},
@@ -403,7 +403,7 @@ int main(int argc, char **argv) {
                 filepath_set(&nca_ctx.tool_ctx->settings.uncompressed_path, optarg);
                 break;
             case 40:
-                nca_ctx.tool_ctx->settings.skip_key_warnings = 1;
+                nca_ctx.tool_ctx->settings.show_key_warnings = 1;
                 break;
             case 41:
                 nca_ctx.tool_ctx->action |= ACTION_LISTFILES;

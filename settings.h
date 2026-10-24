@@ -84,7 +84,7 @@ typedef struct {
 
 typedef struct {
     nca_keyset_t keyset;
-    int skip_key_warnings;
+    int show_key_warnings;
     int has_expected_content_type;
     unsigned int expected_content_type;
     int append_section_types;

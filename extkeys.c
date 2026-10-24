@@ -198,7 +198,7 @@ void extkeys_parse_titlekeys(hactool_settings_t *settings, FILE *f) {
                 }
             }
             if (should_ignore_key) {
-                if (!settings->skip_key_warnings) {
+                if (settings->show_key_warnings) {
                     fprintf(stderr, "[WARN]: Invalid title.keys content: \"%s\", (value \"%s\")\n", key, value);
                 }
             } else {
@@ -455,7 +455,7 @@ void extkeys_initialize_settings(hactool_settings_t *settings, FILE *f) {
                     }
                 }
             }
-            if (!matched_key && !settings->skip_key_warnings) {
+            if (!matched_key && settings->show_key_warnings) {
                 fprintf(stderr, "[WARN]: Failed to match key \"%s\", (value \"%s\")\n", key, value);
             }
         }
