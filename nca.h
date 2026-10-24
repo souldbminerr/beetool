@@ -181,6 +181,7 @@ typedef struct nca_ctx {
     int is_decrypted;
     int is_cli_target;
     enum nca_version format_version;
+    npdm_platform_t platform;
     validity_t fixed_sig_validity;
     validity_t npdm_sig_validity;
     hactool_ctx_t *tool_ctx;
@@ -188,6 +189,7 @@ typedef struct nca_ctx {
     unsigned char title_key[0x10];
     nca_section_ctx_t section_contexts[4];
     npdm_t *npdm;
+    npdm_acid_signature_t signatures;
     nca_header_t header;
 } nca_ctx_t;
 

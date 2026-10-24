@@ -10,6 +10,9 @@
 #define MAGIC_ACID 0x44494341
 #define MAGIC_ACI0 0x30494341
 
+#define NPDM_SIG_SIZE_NX 0x100
+#define NPDM_SIG_SIZE_OUNCE 0x180
+
 typedef struct kac_mmio {
     uint64_t address;
     uint64_t size;
@@ -90,8 +93,14 @@ typedef struct {
 } npdm_aci0_t;
 
 typedef struct {
-    uint8_t signature[0x100];
-    uint8_t modulus[0x100];
+    // 0x100 (2048) = NX
+    // 0x180 (3072) = Ounce
+    uint32_t key_size_bytes;
+    uint8_t signature[0x180];
+    uint8_t modulus[0x180];
+} npdm_acid_signature_t;
+
+typedef struct {
     uint32_t magic;
     uint32_t size;
     uint32_t _0x208;
@@ -125,8 +134,21 @@ typedef struct {
     uint32_t acid_size;
 } npdm_t;
 
-static inline npdm_acid_t *npdm_get_acid(npdm_t *npdm) {
-    return (npdm_acid_t *)((char *)npdm + npdm->acid_offset);
+typedef enum {
+    NPDM_PLATFORM_INVALID = 0,
+    NPDM_PLATFORM_NX = 1,
+    NPDM_PLATFORM_OUNCE = 2
+} npdm_platform_t;
+
+static inline npdm_acid_t *npdm_get_acid(npdm_t *npdm, npdm_platform_t platform) {
+    size_t head_offset;
+    if (platform == NPDM_PLATFORM_NX) {
+        head_offset = NPDM_SIG_SIZE_NX * 2;
+    } else /* if (platform == NPDM_PLATFORM_OUNCE) */ {
+        head_offset = NPDM_SIG_SIZE_OUNCE * 2;
+    }
+
+    return (npdm_acid_t *)((char *)npdm + npdm->acid_offset + head_offset);
 }
 
 static inline npdm_aci0_t *npdm_get_aci0(npdm_t *npdm) {

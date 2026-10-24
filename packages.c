@@ -357,7 +357,7 @@ void pk21_process(pk21_ctx_t *ctx) {
     is_encrypted &= ctx->header.magic != MAGIC_PK21;
 
     if (is_encrypted) {
-        if (rsa2048_pss_verify(&ctx->header.ctr, 0x100, ctx->header.signature, ctx->tool_ctx->settings.keyset.package2_fixed_key_modulus)) {
+        if (rsa_pss_verify(&ctx->header.ctr, 0x100, ctx->header.signature, ctx->tool_ctx->settings.keyset.package2_fixed_key_modulus, RSA_2048_BYTES)) {
             ctx->signature_validity = VALIDITY_VALID;
         } else {
             ctx->signature_validity = VALIDITY_INVALID;

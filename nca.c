@@ -411,7 +411,7 @@ void nca_process(nca_ctx_t *ctx) {
     }
 
     if (ctx->header.fixed_key_generation < sizeof(ctx->tool_ctx->settings.keyset.nca_hdr_fixed_key_moduli) / sizeof(ctx->tool_ctx->settings.keyset.nca_hdr_fixed_key_moduli[0])) {
-        if (rsa2048_pss_verify(&ctx->header.magic, 0x200, ctx->header.fixed_key_sig, ctx->tool_ctx->settings.keyset.nca_hdr_fixed_key_moduli[ctx->header.fixed_key_generation])) {
+        if (rsa_pss_verify(&ctx->header.magic, 0x200, ctx->header.fixed_key_sig, ctx->tool_ctx->settings.keyset.nca_hdr_fixed_key_moduli[ctx->header.fixed_key_generation], RSA_2048_BYTES)) {
             ctx->fixed_sig_validity = VALIDITY_VALID;
         } else {
             ctx->fixed_sig_validity = VALIDITY_INVALID;
@@ -549,7 +549,7 @@ void nca_process(nca_ctx_t *ctx) {
                     /* Verify NPDM sig now, if we can... */
                     if (ctx->section_contexts[i].pfs0_ctx.is_exefs) {
                         ctx->npdm = ctx->section_contexts[i].pfs0_ctx.npdm;
-                        if (rsa2048_pss_verify(&ctx->header.magic, 0x200, ctx->header.npdm_key_sig, npdm_get_acid(ctx->npdm)->modulus)) {
+                        if (rsa_pss_verify(&ctx->header.magic, 0x200, ctx->header.npdm_key_sig, ctx->signatures.modulus, RSA_2048_BYTES)) {
                             ctx->npdm_sig_validity = VALIDITY_VALID;
                         } else {
                             ctx->npdm_sig_validity = VALIDITY_INVALID;

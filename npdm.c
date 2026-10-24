@@ -655,6 +655,41 @@ static void fac_print(fac_t *fac, fah_t *fah) {
     printf("\n");
 }
 
+static npdm_platform_t npdm_guess_platform(npdm_t *npdm) {
+    const char *data = (char *)npdm + npdm->acid_offset;
+    const uint32_t *magic_nx = (uint32_t*) (data + (2 * NPDM_SIG_SIZE_NX));
+    const uint32_t *magic_ounce = (uint32_t*) (data + (2 * NPDM_SIG_SIZE_OUNCE));
+
+    if (npdm->acid_size >= 2 * NPDM_SIG_SIZE_OUNCE && *magic_ounce == MAGIC_ACID) {
+        return NPDM_PLATFORM_OUNCE;
+    } else if (npdm->acid_size >= 2 * NPDM_SIG_SIZE_NX && *magic_nx == MAGIC_ACID) {
+        return NPDM_PLATFORM_NX;
+    } else {
+        return NPDM_PLATFORM_INVALID;
+    }
+}
+
+static void npdm_get_acid_signatures(npdm_t *npdm, npdm_platform_t platform, npdm_acid_signature_t *out_signatures) {
+    const char *data = (char *)npdm + npdm->acid_offset;
+    memset(out_signatures, 0, sizeof(npdm_acid_signature_t));
+
+    switch (platform) {
+        case NPDM_PLATFORM_NX:
+            out_signatures->key_size_bytes = NPDM_SIG_SIZE_NX;
+            memcpy(out_signatures->signature, data, NPDM_SIG_SIZE_NX);
+            memcpy(out_signatures->modulus, data + NPDM_SIG_SIZE_NX, NPDM_SIG_SIZE_NX);
+            break;
+        case NPDM_PLATFORM_OUNCE:
+            out_signatures->key_size_bytes = NPDM_SIG_SIZE_OUNCE;
+            memcpy(out_signatures->signature, data, NPDM_SIG_SIZE_OUNCE);
+            memcpy(out_signatures->modulus, data + NPDM_SIG_SIZE_OUNCE, NPDM_SIG_SIZE_OUNCE);
+            break;
+        default:
+            // unreachable
+            exit(EXIT_FAILURE);
+    }
+}
+
 void npdm_process(npdm_t *npdm, hactool_ctx_t *tool_ctx) {
     if (tool_ctx->action & ACTION_INFO) {
         npdm_print(npdm, tool_ctx);
@@ -674,28 +709,48 @@ void npdm_print(npdm_t *npdm, hactool_ctx_t *tool_ctx) {
     printf("    Version:                        %"PRIu32".%"PRIu32".%"PRIu32"-%"PRIu32" (%"PRIu32")\n", (npdm->version >> 26) & 0x3F, (npdm->version >> 20) & 0x3F, (npdm->version >> 16) & 0xF, (npdm->version >> 0) & 0xFFFF, npdm->version);
     printf("    Main Thread Stack Size:         0x%"PRIx32"\n", npdm->main_stack_size);
     printf("    Title Name:                     %s\n", npdm->title_name);
-    npdm_acid_t *acid = npdm_get_acid(npdm);
+
+    npdm_platform_t platform = npdm_guess_platform(npdm);
+    switch (platform) {
+        case NPDM_PLATFORM_NX:
+            printf("    Platform:                       NX\n");
+            break;
+        case NPDM_PLATFORM_OUNCE:
+            printf("    Platform:                       Ounce\n");
+            break;
+        case NPDM_PLATFORM_INVALID:
+            fprintf(stderr, "Could not find ACID magic at any expected offset!\n");
+            exit(EXIT_FAILURE);
+            return;
+    }
+
+    npdm_acid_t *acid = npdm_get_acid(npdm, platform);
     npdm_aci0_t *aci0 = npdm_get_aci0(npdm);
     printf("    ACID:\n");
     print_magic("        Magic:                      ", acid->magic);
-    if (tool_ctx->action & ACTION_VERIFY) {
+
+    npdm_acid_signature_t signatures;
+    npdm_get_acid_signatures(npdm, platform, &signatures);
+
+    // TODO: implement on Ounce
+    if (tool_ctx->action & ACTION_VERIFY && platform == NPDM_PLATFORM_NX) {
         if (npdm->acid_sign_key_index < sizeof(tool_ctx->settings.keyset.acid_fixed_key_moduli) / sizeof(tool_ctx->settings.keyset.acid_fixed_key_moduli[0])) {
             printf("        Signature Key (GOOD):       %"PRIu32"\n", npdm->acid_sign_key_index);
-            if (rsa2048_pss_verify(acid->modulus, acid->size, acid->signature, tool_ctx->settings.keyset.acid_fixed_key_moduli[npdm->acid_sign_key_index])) {
-                memdump(stdout, "        Signature (GOOD):           ", &acid->signature, 0x100);
+            if (rsa_pss_verify(signatures.modulus, acid->size, signatures.signature, tool_ctx->settings.keyset.acid_fixed_key_moduli[npdm->acid_sign_key_index], signatures.key_size_bytes)) {
+                memdump(stdout, "        Signature (GOOD):           ", &signatures.signature, signatures.key_size_bytes);
             } else {
-                memdump(stdout, "        Signature (FAIL):           ", &acid->signature, 0x100);
+                memdump(stdout, "        Signature (FAIL):           ", &signatures.signature, signatures.key_size_bytes);
             }
         } else {
             printf("        Signature Key (FAIL):       %"PRIu32"\n", npdm->acid_sign_key_index);
-            memdump(stdout, "        Signature (FAIL):           ", &acid->signature, 0x100);
+            memdump(stdout, "        Signature (FAIL):           ", &signatures.signature, signatures.key_size_bytes);
         }
 
     } else {
         printf("        Signature Key:              %"PRIu32"\n", npdm->acid_sign_key_index);
-        memdump(stdout, "        Signature:                  ", &acid->signature, 0x100);
+        memdump(stdout, "        Signature:                  ", &signatures.signature, signatures.key_size_bytes);
     }
-    memdump(stdout, "        Header Modulus:             ", &acid->modulus, 0x100);
+    memdump(stdout, "        Header Modulus:             ", &signatures.modulus, signatures.key_size_bytes);
     printf("        Is Retail:                  %"PRId32"\n", acid->flags & 1);
     printf("        Pool Partition:             %"PRId32"\n", (acid->flags >> 2) & 3);
     printf("        Title ID Range:             %016"PRIx64"-%016"PRIx64"\n", acid->title_id_range_min, acid->title_id_range_max);
@@ -944,7 +999,15 @@ cJSON *kac_get_json(const uint32_t *descriptors, uint32_t num_descriptors) {
 }
 
 char *npdm_get_json(npdm_t *npdm) {
-    npdm_acid_t *acid = npdm_get_acid(npdm);
+
+    npdm_platform_t platform = npdm_guess_platform(npdm);
+    if (platform == NPDM_PLATFORM_INVALID) {
+        fprintf(stderr, "Could not find ACID magic at any expected offset!\n");
+        exit(EXIT_FAILURE);
+        return NULL;
+    }
+
+    npdm_acid_t *acid = npdm_get_acid(npdm, platform);
     npdm_aci0_t *aci0 = npdm_get_aci0(npdm);
     cJSON *npdm_json = cJSON_CreateObject();
     char *output_str = NULL;
@@ -964,6 +1027,17 @@ char *npdm_get_json(npdm_t *npdm) {
     cJSON_AddNumberToObject(npdm_json, "pool_partition", (acid->flags >> 2) & 3);
     cJSON_AddBoolToObject(npdm_json, "is_64_bit", npdm->mmu_flags & 1);
     cJSON_AddNumberToObject(npdm_json, "address_space_type", (npdm->mmu_flags >> 1) & 7);
+
+    switch (platform) {
+        case NPDM_PLATFORM_NX:
+            cJSON_AddStringToObject(npdm_json, "platform", "nx");
+            break;
+        case NPDM_PLATFORM_OUNCE:
+            cJSON_AddStringToObject(npdm_json, "platform", "ounce");
+            break;
+        default:
+            break;
+    }
 
     /* Add FAC. */
     fac_t *fac = (fac_t *)((char *)acid + acid->fac_offset);

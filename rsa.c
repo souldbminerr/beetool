@@ -5,8 +5,9 @@
 #include "utils.h"
 #include "types.h"
 
-#define RSA_2048_BYTES 0x100
-#define RSA_2048_BITS (RSA_2048_BYTES*8)
+#define MIN_KEY_SIZE 0x100
+#define MAX_KEY_SIZE 0x200
+#define MAX_KEY_SIZE_BITS (MAX_KEY_SIZE*8)
 
 static void calculate_mgf1_and_xor(unsigned char *data, size_t data_size, const void *h_src, size_t h_src_size) {
     unsigned char h_buf[RSA_2048_BYTES] = {0};
@@ -29,28 +30,32 @@ static void calculate_mgf1_and_xor(unsigned char *data, size_t data_size, const 
 }
 
 /* Perform an RSA-PSS verify operation on data, with signature and N. */
-int rsa2048_pss_verify(const void *data, size_t len, const unsigned char *signature, const unsigned char *modulus) {
+int rsa_pss_verify(const void *data, size_t len, const unsigned char *signature, const unsigned char *modulus, size_t modulus_size_bytes) {
     mbedtls_mpi signature_mpi;
     mbedtls_mpi modulus_mpi;
     mbedtls_mpi e_mpi;
     mbedtls_mpi message_mpi;
 
+    if (modulus_size_bytes < MIN_KEY_SIZE || modulus_size_bytes > MAX_KEY_SIZE) {
+        FATAL_ERROR("Invalid modulus size for RSA-PSS verify!");
+    }
+
     mbedtls_mpi_init(&signature_mpi);
     mbedtls_mpi_init(&modulus_mpi);
     mbedtls_mpi_init(&e_mpi);
     mbedtls_mpi_init(&message_mpi);
-    mbedtls_mpi_lset(&message_mpi, RSA_2048_BITS);
+    mbedtls_mpi_lset(&message_mpi, modulus_size_bytes * 8);
 
-    unsigned char m_buf[RSA_2048_BYTES];
+    unsigned char m_buf[MAX_KEY_SIZE];
     unsigned char h_buf[0x24];
     const unsigned char E[3] = {1, 0, 1};
 
     mbedtls_mpi_read_binary(&e_mpi, E, 3);
-    mbedtls_mpi_read_binary(&signature_mpi, signature, RSA_2048_BYTES);
-    mbedtls_mpi_read_binary(&modulus_mpi, modulus, RSA_2048_BYTES);
+    mbedtls_mpi_read_binary(&signature_mpi, signature, modulus_size_bytes);
+    mbedtls_mpi_read_binary(&modulus_mpi, modulus, modulus_size_bytes);
     mbedtls_mpi_exp_mod(&message_mpi, &signature_mpi, &e_mpi, &modulus_mpi, NULL);
 
-    if (mbedtls_mpi_write_binary(&message_mpi, m_buf, RSA_2048_BYTES) != 0) {
+    if (mbedtls_mpi_write_binary(&message_mpi, m_buf, modulus_size_bytes) != 0) {
         FATAL_ERROR("Failed to export exponentiated RSA message!");
     }
 
@@ -60,25 +65,25 @@ int rsa2048_pss_verify(const void *data, size_t len, const unsigned char *signat
     mbedtls_mpi_free(&message_mpi);
 
     /* There's no automated PSS verification as far as I can tell. */
-    if (m_buf[RSA_2048_BYTES-1] != 0xBC) {
+    if (m_buf[modulus_size_bytes-1] != 0xBC) {
         return false;
     }
 
     memset(h_buf, 0, 0x24);
-    memcpy(h_buf, m_buf + RSA_2048_BYTES - 0x20 - 0x1, 0x20);
+    memcpy(h_buf, m_buf + modulus_size_bytes - 0x20 - 0x1, 0x20);
 
     /* Decrypt maskedDB. */
-    calculate_mgf1_and_xor(m_buf, RSA_2048_BYTES - 0x20 - 1, h_buf, 0x20);
+    calculate_mgf1_and_xor(m_buf, modulus_size_bytes - 0x20 - 1, h_buf, 0x20);
 
     m_buf[0] &= 0x7F; /* Constant lmask for rsa-2048-pss. */
 
     /* Validate DB. */
-    for (unsigned int i = 0; i < RSA_2048_BYTES - 0x20 - 0x20 - 1 - 1; i++) {
+    for (unsigned int i = 0; i < modulus_size_bytes - 0x20 - 0x20 - 1 - 1; i++) {
         if (m_buf[i] != 0) {
             return false;
         }
     }
-    if (m_buf[RSA_2048_BYTES - 0x20 - 0x20 - 1 - 1] != 1) {
+    if (m_buf[modulus_size_bytes - 0x20 - 0x20 - 1 - 1] != 1) {
         return false;
     }
 
@@ -87,7 +92,7 @@ int rsa2048_pss_verify(const void *data, size_t len, const unsigned char *signat
     unsigned char validate_hash[0x20];
     memset(validate_buf, 0, 0x48);
     sha256_hash_buffer(&validate_buf[8], data, len);
-    memcpy(&validate_buf[0x28], &m_buf[RSA_2048_BYTES - 0x20 - 0x20 - 1], 0x20);
+    memcpy(&validate_buf[0x28], &m_buf[modulus_size_bytes - 0x20 - 0x20 - 1], 0x20);
     sha256_hash_buffer(validate_hash, validate_buf, 0x48);
     return memcmp(h_buf, validate_hash, 0x20) == 0;
 }
